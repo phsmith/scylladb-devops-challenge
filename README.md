@@ -2,10 +2,12 @@
 
 | dir / file | purpose |
 |------------|---------|
-| `k8s/` | Base v1 (blue) Deployment + Service. |
-| `ansible/project/` | Ansible Runner playbooks folder – contains playbooks to spin up **green** Deployment, patch Service, and rollback tasks. |
-| `argo/workflow.yaml` | Argo Workflows definition – responsible for running Ansible playbooks and other tasks on the Kubernetes cluster. |
 | `.github/workflows/ci.yml` | Self-test pipeline (kind + Argo) – will go green only after the task is solved. |
+| `ansible/project/` | Ansible Runner playbooks folder – contains playbooks to spin up **green** Deployment, patch Service, perform smoke tests, and rollback tasks. |
+| `argo/workflow.yaml` | Argo Workflows definition – responsible for running Ansible playbooks and other tasks on the Kubernetes cluster. |
+| `k8s/` | Base v1 (blue) Deployment + Service. |
+| `kind/` | Kind cluster configurations folder. |
+| `scripts/` | Helper scripts folder. |
 
 ## Quick start
 
@@ -24,7 +26,7 @@ Run the following script to:
 - Install Argo Workflows in the k8s cluster.
 
 ```bash
-bash ./scripts/local-tests-run.sh
+bash ./scripts/local-tests-setup.sh
 ```
 
 ### Testing
