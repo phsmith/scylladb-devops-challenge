@@ -1,0 +1,117 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: bluegreen-
+spec:
+  entrypoint: nightly-release
+  serviceAccountName: default
+  onExit: rollback
+  arguments:
+    parameters:
+      - name: image_tag
+  volumes:
+    - name: workdir
+      hostPath:
+        path: /workdir
+  templates:
+    - name: nightly-release
+      inputs:
+        parameters:
+          - name: image_tag
+      dag:
+        tasks:
+          - name: lint
+            template: lint
+
+          - name: smoke-tests-blue
+            dependencies: [lint]
+            template: smoke-tests
+            arguments:
+              parameters:
+                - name: deployment_name
+                  value: test-app-blue
+
+          - name: create-green-deployment
+            dependencies: [smoke-tests-blue]
+            template: ansible
+            arguments:
+              parameters:
+                - name: play
+                  value: create-green-deployment.yaml
+                - name: image_tag
+                  value: "{{ inputs.parameters.image_tag }}"
+
+          - name: switch-traffic
+            dependencies: [create-green-deployment]
+            template: ansible
+            arguments:
+              parameters:
+                - name: play
+                  value: switch-traffic.yaml
+
+          - name: smoke-tests-green
+            dependencies: [switch-traffic]
+            template: smoke-tests
+            arguments:
+              parameters:
+                - name: deployment_name
+                  value: test-app-green
+
+    # --- generic template to run ansible-runner ------------------
+    - name: ansible
+      inputs:
+        parameters:
+          - name: play
+          - name: image_tag
+            value: none
+      container:
+        image: python:3.12-alpine
+        command: [sh, -c]
+        args:
+          - |
+            export ANSIBLE_LOCAL_TEMP=/tmp
+            python -m venv .venv && source .venv/bin/activate
+            pip install --disable-pip-version-check --quiet ansible ansible-runner openshift pyyaml
+            ansible-galaxy install -r /workdir/ansible/requirements.yaml
+            echo "ansible-runner run /workdir/ansible -p {{inputs.parameters.play}} --cmdline '--extra-vars image_tag={{inputs.parameters.image_tag}}'"
+            ansible-runner run /workdir/ansible -p {{inputs.parameters.play}} --cmdline '--extra-vars image_tag={{inputs.parameters.image_tag}}'
+        volumeMounts:
+          - name: workdir
+            mountPath: /workdir
+
+    # --- lint ----------------------------------------------------
+    - name: lint
+      script:
+        image: python:3.12-alpine
+        command: [sh, -c]
+        source: |
+          python -m venv .venv && source .venv/bin/activate
+          pip install --disable-pip-version-check --quiet ansible ansible-lint yamllint
+          ansible-lint /workdir/ansible/project/*.yaml
+          yamllint -d relaxed /workdir/k8s/*.yaml
+        volumeMounts:
+          - name: workdir
+            mountPath: /workdir
+
+    # --- smoke-tests ----------------------------------------------------
+    - name: smoke-tests
+      inputs:
+          parameters:
+            - name: deployment_name
+      script:
+        image: curlimages/curl:8.15.0
+        command: [sh, -c]
+        source: |
+          curl -s http://test-app | grep "{{inputs.parameters.deployment_name}}" || exit 1
+
+    # --- rollback --------------------------------------
+    - name: rollback
+      dag:
+        tasks:
+          - name: cleanup
+            template: ansible
+            arguments:
+              parameters:
+                - name: play
+                  value: rollback.yaml
+            when: "{{workflow.status}} != Succeeded"

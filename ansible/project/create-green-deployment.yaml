@@ -1,0 +1,29 @@
+---
+# Playbook executed by Argo Workflows step "create-green-deployment"
+# Inventory will be the Kubernetes cluster via the kubernetes.core.k8s collection
+- name: Blue/Green deployment tasks
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  tasks:
+    - name: Create test-app-green
+      kubernetes.core.k8s:
+        state: present
+        namespace: test-app
+        definition: "{{
+          lookup('file', '../../k8s/deployment-v1.yaml')
+          | regex_replace('blue', 'green')
+          | regex_replace('(\\s+image: .*):.*', '\\1:' + image_tag)
+          | from_yaml
+          }}"
+
+    - name: Wait for deployment to complete
+      kubernetes.core.k8s_info:
+        kind: Deployment
+        name: test-app-green
+        namespace: test-app
+      register: deployment_info
+      until: deployment_info.resources[0].status.updatedReplicas == deployment_info.resources[0].status.replicas
+      retries: 60
+      delay: 10

@@ -1,0 +1,38 @@
+name: self-test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  e2e:
+    name: Blue/Green E2E
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Spin up Kind cluster
+      uses: helm/kind-action@v1
+      with:
+        version: v0.23.0
+        cluster_name: test
+        config: kind/cluster-config.yaml
+
+    - name: Install Argo Workflows (controller) and CLI
+      run: |
+        set -euo pipefail
+
+        # Install Argo CLI
+        curl -sLO https://github.com/argoproj/argo-workflows/releases/download/v3.5.7/argo-linux-amd64.gz
+        gunzip argo-linux-amd64.gz
+        sudo install -o root -g root -m 0755 argo-linux-amd64 /usr/local/bin/argo
+        argo version
+
+        # Run setup script
+        ./scripts/local-tests-setup.sh
+
+    - name: Deploy base (blue) application and run argo workflow
+      run: ./scripts/local-tests-run.sh

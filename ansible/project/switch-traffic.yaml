@@ -1,0 +1,21 @@
+---
+# Playbook executed by Argo Workflows step "switch-traffic"
+- name: Switch traffic tasks
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars:
+    release: green
+
+  tasks:
+    - name: Switch traffic to test-app-{{ release }}
+      kubernetes.core.k8s:
+        state: patched
+        kind: Service
+        name: test-app
+        namespace: test-app
+        definition:
+          spec:
+            selector:
+              release: "{{ release }}"
